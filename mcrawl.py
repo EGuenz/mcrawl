@@ -34,17 +34,23 @@ def try_connect(s, host, port):
         eprint('1: Cant connect to server')
         exit(1)
 
-def format_request(file, host):
+def format_request(file, host, cookie):
     message = "GET " + file + " HTTP/1.1\r\n"
-    message += "Host: " + host + "\r\n\r\n"
+    message += "Host: " + host + "\r\n"
+    if not cookie:
+       message += "\r\n"
+       return message
+    message += "Set-Cookie: " + cookie + "\r\n\r\n"
     return message
 
 def try_request(s):
     response = s.recv(1024).decode("utf-8")
+    print(response)
     if not response.startswith('HTTP/1.1 200 OK'):
       return(response, 0)
     return(response, 1)
 
+'''
 def response_length(s, response):
     length_line = response.splitlines()[6]
     if not length_line.startswith('Content-Length:'):
@@ -57,6 +63,19 @@ def response_length(s, response):
       eprint('1: Bad Request: Content-Length not included')
       exit(1)
     return int(nums.group())
+'''
+
+def get_cookie(response):
+    index = response.find('Set-Cookie: ')
+    if index < 0:
+        return ''
+    index += 12
+    response = response[index:]
+    semi = response.find(';')
+    if semi < 0:
+        return '', ''
+    cookie = response[:semi]
+    return cookie
 
 def handle_links(response, queue):
     #r = re.compile('/<a\s[^>]*href=\"([^\"]*)\"[^>]*>(.*)<\/a>/siU')
@@ -69,47 +88,48 @@ def handle_links(response, queue):
         queue.put(link)
     return
 
-def crawl(s, bytes_expected, first_response, q, host, file):
+def crawl(s, first_response, q, host, file):
     path=os.getcwd()+file
     f = open(path, 'w')
     f.write(first_response)
+    length = len(first_response)
+    cookie = get_cookie(first_response)
     handle_links(first_response, q)
-    totalRec = len(first_response)
-    while totalRec < bytes_expected:
+    while length == 1024:
         response = s.recv(1024).decode("utf-8")
         length = len(response)
         if length <= 0:
             break
         f.write(response)
-        totalRec += length
         handle_links(response, q)
     f.close()
+
     if not q.empty():
         good = 0
         while not good:
           file = q.get()
-          message = format_request(file, host)
+          message = format_request(file, host, cookie)
           print(message)
           s.sendall(message.encode('utf-8'))
           response, good = try_request(s)
-        bytes_expected = response_length(s, response)
-        crawl(s, bytes_expected, response, q, host, file)
+        #bytes_expected = response_length(s, response)
+        crawl(s, response, q, host, file)
     return
 
 def main():
     args = parse_args()
     s = open_socket()
     try_connect(s, args.h, args.p)
-    message = format_request(args.f, args. h)
+    message = format_request(args.f, args. h, '')
     s.sendall(message.encode('utf-8'))
     response, good = try_request(s)
     if not good:
         s.close()
         eprint("1: bad request")
         exit(1)
-    bytes_expected = response_length(s, response)
+    #bytes_expected = response_length(s, response)
     q = Queue()
-    crawl(s, bytes_expected, response, q, args.h, args.f)
+    crawl(s, response, q, args.h, args.f)
     return
 
 main()
