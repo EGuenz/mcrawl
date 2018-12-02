@@ -41,29 +41,10 @@ def format_request(file, host, cookie):
        message += "\r\n"
        return message
     message += "Set-Cookie: " + cookie + "\r\n\r\n"
-    return message
+    return(message)
 
-def try_request(s):
-    response = s.recv(1024).decode("utf-8")
-    print(response)
-    if not response.startswith('HTTP/1.1 200 OK'):
-      return(response, 0)
-    return(response, 1)
-
-'''
-def response_length(s, response):
-    length_line = response.splitlines()[6]
-    if not length_line.startswith('Content-Length:'):
-        s.close()
-        eprint('1: Bad Request: Content-Length not included')
-        exit(1)
-    nums = re.search(r'\d+', length_line)
-    if nums is None:
-      s.close()
-      eprint('1: Bad Request: Content-Length not included')
-      exit(1)
-    return int(nums.group())
-'''
+def is_success(header):
+    return header.startswith('HTTP/1.1 200 OK')
 
 def get_cookie(response):
     index = response.find('Set-Cookie: ')
@@ -77,10 +58,41 @@ def get_cookie(response):
     cookie = response[:semi]
     return cookie
 
+def get_chunk_size(s):
+    size_str = s.recv(2)
+    while size_str[-2:] != b"\r\n":
+        size_str += s.recv(1)
+    print(str(size_str[:-2]))
+    return int(size_str[:-2], 16)
+
+def get_chunk_data(s, chunk_size):
+    bytes_left = chunk_size
+    chunk = b''
+    while bytes_left > 0:
+      buf_size = min(1024, bytes_left)
+      data = s.recv(buf_size)
+      chunk += data
+      bytes_left -= len(data)
+    return chunk
+
+def is_text(response):
+    index = response.find('Content-Type: ')
+    if index < 0:
+        return ''
+    index += 14
+    return("text" in response[index:])
+
+def has_same_host(file, host):
+    r = re.compile('(?<=http://)(.*?)(?=/)', re.IGNORECASE)
+    file_hosts = r.findall(file)
+    if not file_hosts:
+        return True
+    return(file_hosts[0] == host)
+
 def handle_links(response, queue):
-    #r = re.compile('/<a\s[^>]*href=\"([^\"]*)\"[^>]*>(.*)<\/a>/siU')
+    response_text = response.decode('utf-8')
     r = re.compile('(?<=href=").*?(?=")', re.IGNORECASE)
-    links = r.findall(response)
+    links = r.findall(response_text)
     if not links:
         return
     for link in links:
@@ -88,32 +100,65 @@ def handle_links(response, queue):
         queue.put(link)
     return
 
-def crawl(s, first_response, q, host, file):
-    path=os.getcwd()+file
-    f = open(path, 'w')
-    f.write(first_response)
-    length = len(first_response)
-    cookie = get_cookie(first_response)
-    handle_links(first_response, q)
-    while length == 1024:
-        response = s.recv(1024).decode("utf-8")
-        length = len(response)
-        if length <= 0:
-            break
-        f.write(response)
-        handle_links(response, q)
-    f.close()
+def open_file(filename):
+  if not os.path.exists(os.path.dirname(filename)):
+      try:
+        os.makedirs(os.path.dirname(filename))
+      except OSError as exc:
+        if exc.errno != errno.EEXIST:
+          raise
+  f = open(filename, 'wb')
+  return f
 
-    if not q.empty():
-        good = 0
-        while not good:
-          file = q.get()
-          message = format_request(file, host, cookie)
-          print(message)
-          s.sendall(message.encode('utf-8'))
-          response, good = try_request(s)
-        #bytes_expected = response_length(s, response)
-        crawl(s, response, q, host, file)
+def get_header(s):
+    response = s.recv(1024, socket.MSG_PEEK)
+    fileIndex = response.find('\r\n\r\n'.encode('utf-8'), 0) + 4
+    header = response[:fileIndex].decode('utf-8')
+    s.recv(fileIndex)
+    return header
+
+def download_file(s):
+  header = get_header(s)
+  print("HEADER: " + header)
+  if not is_success(header):
+       return '', ''
+  file = b''
+  while True:
+    chunk_size = get_chunk_size(s)
+    if (chunk_size == 0):
+        break
+    else:
+        chunk = get_chunk_data(s, chunk_size)
+        file += chunk
+        s.recv(2)
+
+  return header, file
+
+def crawl(s, q, host, filename, file, cookie, isText):
+    path=os.getcwd() + '/downloads' + filename
+    f = open_file(path)
+    f.write(file)
+    if isText:
+       handle_links(file, q)
+    f.close()
+    while True:
+      if q.empty():
+          return
+      filename = q.get()
+      if (not has_same_host(filename, host)) or (filename == "#"):
+        continue
+      filename = '/' + filename
+      message = format_request(filename, host, cookie)
+      print(message)
+      s.sendall(message.encode('utf-8'))
+      header, file = download_file(s)
+      if not header or not file:
+          continue
+      break
+    isText = is_text(header)
+    if isText:
+        print("FILE: " +  file.decode('utf-8'))
+    crawl(s, q, host, filename, file, cookie, isText)
     return
 
 def main():
@@ -122,14 +167,11 @@ def main():
     try_connect(s, args.h, args.p)
     message = format_request(args.f, args. h, '')
     s.sendall(message.encode('utf-8'))
-    response, good = try_request(s)
-    if not good:
-        s.close()
-        eprint("1: bad request")
-        exit(1)
-    #bytes_expected = response_length(s, response)
+    header, file = download_file(s)
+    cookie = get_cookie(header)
+    isText = is_text(header)
     q = Queue()
-    crawl(s, response, q, args.h, args.f)
+    crawl(s, q, args.h, args.f, file, cookie, isText)
     return
 
 main()
