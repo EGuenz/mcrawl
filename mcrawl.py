@@ -84,7 +84,7 @@ def is_text(response):
 
 #TODO: match https, www???
 def has_same_host(file, host):
-    r = re.compile('(?:(?<=http)|(?<=https))://(.*?)(?=/)', re.IGNORECASE)
+    r = re.compile('(?:(?<=http)|(?<=https))://(.*?)(?:(?=/)|(?=$))', re.IGNORECASE)
     file_hosts = r.findall(file)
     if not file_hosts:
         return True
