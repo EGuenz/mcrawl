@@ -91,20 +91,31 @@ def has_same_host(file, host):
     return(file_hosts[0] == host)
 
 #TODO: Only add new links
-def handle_links(response, queue, host):
+def handle_links(response, queue, host, parsed_links):
     response_text = response.decode('utf-8')
     r = re.compile('(?<=href=").*?(?=")', re.IGNORECASE)
     links = r.findall(response_text)
     if not links:
         return
     for link in links:
-        if has_same_host(link, host):
+        if has_same_host(link, host) and link not in parsed_links:
           queue.put(link)
+          parsed_links.append(link)
     return
 
 def open_file(filename):
   filename = os.path.basename(filename.rstrip('/'))
   filename = os.getcwd() + '/downloads/' + filename
+  new_filename = filename
+  if os.path.isfile(filename):
+     v = 1
+     k = filename.rfind(".")
+     while True:
+       new_filename = filename[:k] + "-" + str(v) + filename[k:]
+       if not os.path.isfile(new_filename):
+           break
+       v+=1
+  filename = new_filename
   if not os.path.exists(os.path.dirname(filename)):
       try:
         os.makedirs(os.path.dirname(filename))
@@ -142,11 +153,11 @@ def download_file(s):
  s.recv(2)
  return header, file
 
-def crawl(s, q, host, filename, file, cookie, isText):
+def crawl(s, q, host, filename, file, cookie, isText, parsed_links):
     f = open_file(filename)
     f.write(file)
     if isText:
-       handle_links(file, q, host)
+       handle_links(file, q, host, parsed_links)
     f.close()
     while True:
       if q.empty():
@@ -165,7 +176,7 @@ def crawl(s, q, host, filename, file, cookie, isText):
     isText = is_text(header)
     #if isText:
         #print("FILE: " +  file.decode('utf-8'))
-    crawl(s, q, host, filename, file, cookie, isText)
+    crawl(s, q, host, filename, file, cookie, isText, parsed_links)
     return
 
 def main():
@@ -178,7 +189,8 @@ def main():
     cookie = get_cookie(header)
     isText = is_text(header)
     q = Queue()
-    crawl(s, q, args.h, args.f, file, cookie, isText)
+    parsed_links = []
+    crawl(s, q, args.h, args.f, file, cookie, isText, parsed_links)
     return
 
 main()
