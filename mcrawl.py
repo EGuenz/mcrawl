@@ -62,7 +62,7 @@ def get_chunk_size(s):
     size_str = s.recv(2)
     while size_str[-2:] != b"\r\n":
         size_str += s.recv(1)
-    print(str(size_str[:-2]))
+    #print(str(size_str[:-2]))
     return int(size_str[:-2], 16)
 
 def get_chunk_data(s, chunk_size):
@@ -82,6 +82,7 @@ def is_text(response):
     index += 14
     return("text" in response[index:])
 
+#TODO: match https, www???
 def has_same_host(file, host):
     r = re.compile('(?<=http://)(.*?)(?=/)', re.IGNORECASE)
     file_hosts = r.findall(file)
@@ -89,18 +90,21 @@ def has_same_host(file, host):
         return True
     return(file_hosts[0] == host)
 
-def handle_links(response, queue):
+#TODO: Only add new links
+def handle_links(response, queue, host):
     response_text = response.decode('utf-8')
     r = re.compile('(?<=href=").*?(?=")', re.IGNORECASE)
     links = r.findall(response_text)
     if not links:
         return
     for link in links:
-        print(link)
-        queue.put(link)
+        if has_same_host(link, host):
+          queue.put(link)
     return
 
 def open_file(filename):
+  filename = os.path.basename(filename.rstrip('/'))
+  filename = os.getcwd() + '/downloads/' + filename
   if not os.path.exists(os.path.dirname(filename)):
       try:
         os.makedirs(os.path.dirname(filename))
@@ -111,41 +115,44 @@ def open_file(filename):
   return f
 
 def get_header(s):
-    response = s.recv(1024, socket.MSG_PEEK)
-    fileIndex = response.find('\r\n\r\n'.encode('utf-8'), 0) + 4
-    header = response[:fileIndex].decode('utf-8')
-    s.recv(fileIndex)
-    return header
+    total_response = s.recv(3)
+    while True:
+        response = s.recv(1)
+        if not response:
+            return ''
+        total_response += response
+        if total_response[-4:] == "\r\n\r\n".encode('utf-8'):
+            break
+    #print("HEADER IS: " + str(total_response))
+    return total_response.decode('utf-8')
 
 def download_file(s):
-  header = get_header(s)
-  print("HEADER: " + header)
-  if not is_success(header):
+ header = get_header(s)
+ if not is_success(header):
        return '', ''
-  file = b''
-  while True:
+ file = b''
+ while True:
     chunk_size = get_chunk_size(s)
     if (chunk_size == 0):
         break
     else:
         chunk = get_chunk_data(s, chunk_size)
         file += chunk
-        s.recv(2)
-
-  return header, file
+        file += s.recv(2)
+ s.recv(2)
+ return header, file
 
 def crawl(s, q, host, filename, file, cookie, isText):
-    path=os.getcwd() + '/downloads' + filename
-    f = open_file(path)
+    f = open_file(filename)
     f.write(file)
     if isText:
-       handle_links(file, q)
+       handle_links(file, q, host)
     f.close()
     while True:
       if q.empty():
           return
       filename = q.get()
-      if (not has_same_host(filename, host)) or (filename == "#"):
+      if (not has_same_host(filename, host)) or ("#" in filename):
         continue
       filename = '/' + filename
       message = format_request(filename, host, cookie)
@@ -156,8 +163,8 @@ def crawl(s, q, host, filename, file, cookie, isText):
           continue
       break
     isText = is_text(header)
-    if isText:
-        print("FILE: " +  file.decode('utf-8'))
+    #if isText:
+        #print("FILE: " +  file.decode('utf-8'))
     crawl(s, q, host, filename, file, cookie, isText)
     return
 
