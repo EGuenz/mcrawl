@@ -84,7 +84,7 @@ def is_text(response):
 
 #TODO: match https, www???
 def has_same_host(file, host):
-    r = re.compile('(?<=http://)(.*?)(?=/)', re.IGNORECASE)
+    r = re.compile('(?:(?<=http)|(?<=https))://(.*?)(?=/)', re.IGNORECASE)
     file_hosts = r.findall(file)
     if not file_hosts:
         return True
@@ -138,7 +138,7 @@ def download_file(s):
     else:
         chunk = get_chunk_data(s, chunk_size)
         file += chunk
-        file += s.recv(2)
+        s.recv(2)
  s.recv(2)
  return header, file
 
