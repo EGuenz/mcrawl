@@ -5,6 +5,7 @@ from queue import Queue
 import sys
 import re
 import os
+import threading
 
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
@@ -177,23 +178,35 @@ def crawl(s, q, host, filename, file, cookie, isText, parsed_links):
           continue
       break
     isText = is_text(header)
-    #if isText:
-        #print("FILE: " +  file.decode('utf-8'))
     crawl(s, q, host, filename, file, cookie, isText, parsed_links)
     return
 
-def main():
-    args = parse_args()
+def user_crawl(host, port, file_name, link_queue, parsed_links):
     s = open_socket()
-    try_connect(s, args.h, args.p)
-    message = format_request(args.f, args. h, '')
+    try_connect(s, host, port)
+    message = format_request(file_name, host, '')
     s.sendall(message.encode('utf-8'))
     header, file = download_file(s)
     cookie = get_cookie(header)
     isText = is_text(header)
-    q = Queue()
+    crawl(s, link_queue, host, file_name, file, cookie, isText, parsed_links)
+
+def main():
+    args = parse_args()
+    link_queue = Queue()
+    link_queue.put(args.f)
     parsed_links = []
-    crawl(s, q, args.h, args.f, file, cookie, isText, parsed_links)
+    max_threads = args.n
+    if max_threads < 1:
+        return
+    for x in range(max_threads):
+       file_name = link_queue.get()
+       try:
+          t = threading.Thread(target=user_crawl, args=(args.h, args.p, file_name, link_queue, parsed_links))
+          t.start()
+       except:
+          eprint('7: Unable to start user_thread')
+          exit(1)
     return
 
 main()
