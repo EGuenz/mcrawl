@@ -157,12 +157,7 @@ def download_file(s):
  s.recv(2)
  return header, file
 
-def crawl(s, q, host, filename, file, cookie, isText, parsed_links):
-    f = open_file(filename)
-    f.write(file)
-    if isText:
-       handle_links(file, q, host, parsed_links)
-    f.close()
+def crawl(s, q, host, cookie, parsed_links):
     while True:
       if q.empty():
           return
@@ -171,25 +166,27 @@ def crawl(s, q, host, filename, file, cookie, isText, parsed_links):
         continue
       filename = '/' + filename
       message = format_request(filename, host, cookie)
-      print(message)
+      #print(message)
       s.sendall(message.encode('utf-8'))
       header, file = download_file(s)
       if not header or not file:
           continue
       break
+
     isText = is_text(header)
-    crawl(s, q, host, filename, file, cookie, isText, parsed_links)
+    f = open_file(filename)
+    f.write(file)
+    if isText:
+       handle_links(file, q, host, parsed_links)
+    f.close()
+    crawl(s, q, host, cookie, parsed_links)
     return
 
-def user_crawl(host, port, file_name, link_queue, parsed_links):
+def new_user(host, port, link_queue, parsed_links):
     s = open_socket()
     try_connect(s, host, port)
-    message = format_request(file_name, host, '')
-    s.sendall(message.encode('utf-8'))
-    header, file = download_file(s)
-    cookie = get_cookie(header)
-    isText = is_text(header)
-    crawl(s, link_queue, host, file_name, file, cookie, isText, parsed_links)
+    crawl(s, link_queue, host, '', parsed_links)
+    return
 
 def main():
     args = parse_args()
@@ -200,9 +197,8 @@ def main():
     if max_threads < 1:
         return
     for x in range(max_threads):
-       file_name = link_queue.get()
        try:
-          t = threading.Thread(target=user_crawl, args=(args.h, args.p, file_name, link_queue, parsed_links))
+          t = threading.Thread(target=new_user, args=(args.h, args.p, link_queue, parsed_links))
           t.start()
        except:
           eprint('7: Unable to start user_thread')
