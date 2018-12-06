@@ -93,14 +93,16 @@ def has_same_host(file, host):
 #TODO: Only add new links
 def handle_links(response, queue, host, parsed_links):
     response_text = response.decode('utf-8')
-    r = re.compile('(?<=href=").*?(?=")', re.IGNORECASE)
+    r = re.compile('(?:(?<=href=")|(?<=src=")).*?(?=")', re.IGNORECASE)
     links = r.findall(response_text)
     if not links:
         return
     for link in links:
+        print(link)
         if has_same_host(link, host) and link not in parsed_links:
           queue.put(link)
           parsed_links.append(link)
+    print("done")
     return
 
 def open_file(filename):
@@ -142,6 +144,7 @@ def download_file(s):
  if not is_success(header):
        return '', ''
  file = b''
+ print("Success")
  while True:
     chunk_size = get_chunk_size(s)
     if (chunk_size == 0):
