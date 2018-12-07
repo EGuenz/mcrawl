@@ -125,6 +125,8 @@ def open_file(filename):
       except OSError as exc:
         if exc.errno != errno.EEXIST:
           raise
+  if os.path.isdir(filename):
+       return -1
   f = open(filename, 'wb')
   return f
 
@@ -170,10 +172,12 @@ def crawl(s, q, host, parsed_links):
       header, file = download_file(s)
       if not header or not file:
           continue
+      isText = is_text(header)
+      f = open_file(filename)
+      if f == -1:
+          continue
       break
-
-    isText = is_text(header)
-    f = open_file(filename)
+      
     f.write(file)
     if isText:
        handle_links(file, q, host, parsed_links)
