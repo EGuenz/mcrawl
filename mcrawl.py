@@ -36,10 +36,26 @@ def try_connect(s, host, port):
         eprint('1: Cant connect to server')
         exit(1)
 
-def format_request(file, host):
+def format_request(file, host, cookie):
     message = "GET " + file + " HTTP/1.1\r\n"
-    message += "Host: " + host + "\r\n\r\n"
-    return message
+    message += "Host: " + host + "\r\n"
+    if not cookie:
+       message += "\r\n"
+       return message
+    message += "Set-Cookie: " + cookie + "\r\n\r\n"
+    return(message)
+
+def get_cookie(response):
+    index = response.find('Set-Cookie: ')
+    if index < 0:
+        return ''
+    index += 12
+    response = response[index:]
+    semi = response.find(';')
+    if semi < 0:
+        return '', ''
+    cookie = response[:semi]
+    return cookie
 
 
 def is_success(header):
@@ -92,7 +108,7 @@ def handle_links(response, queue, host, parsed_links):
 
 def open_file(filename, local_file):
   filename = os.path.basename(filename.rstrip('/'))
-  filename = os.getcwd() + '/' + local_file '/' + filename
+  filename = os.getcwd() + '/' + local_file + '/' + filename
   new_filename = filename
   if os.path.isfile(filename):
      v = 1
@@ -143,7 +159,7 @@ def download_file(s):
  s.recv(2)
  return header, file
 
-def crawl(s, q, host, parsed_links, local_file):
+def crawl(s, q, host, parsed_links, local_file, cookie):
     while True:
       if q.empty():
           return
@@ -151,7 +167,7 @@ def crawl(s, q, host, parsed_links, local_file):
       if (not has_same_host(filename, host)) or ("#" in filename):
         continue
       filename = '/' + filename
-      message = format_request(filename, host)
+      message = format_request(filename, host, cookie)
       s.sendall(message.encode('utf-8'))
       header, file = download_file(s)
       if not header or not file:
@@ -161,18 +177,19 @@ def crawl(s, q, host, parsed_links, local_file):
       if f == -1:
           continue
       break
-
     f.write(file)
     if isText:
        handle_links(file, q, host, parsed_links)
     f.close()
-    crawl(s, q, host, parsed_links, local_file)
+    if not cookie:
+        cookie = get_cookie(header)
+    crawl(s, q, host, parsed_links, local_file, cookie)
     return
 
 def new_user(host, port, link_queue, parsed_links, local_file):
     s = open_socket()
     try_connect(s, host, port)
-    crawl(s, link_queue, host, parsed_links, local_file)
+    crawl(s, link_queue, host, parsed_links, local_file, '')
     return
 
 def main():
