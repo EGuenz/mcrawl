@@ -6,7 +6,6 @@ import sys
 import re
 import os
 import threading
-import time
 
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
@@ -65,7 +64,6 @@ def get_chunk_size(s):
     size_str = s.recv(2)
     while size_str[-2:] != b"\r\n":
         size_str += s.recv(1)
-    #print(str(size_str[:-2]))
     return int(size_str[:-2], 16)
 
 def get_chunk_data(s, chunk_size):
@@ -99,11 +97,9 @@ def handle_links(response, queue, host, parsed_links):
     if not links:
         return
     for link in links:
-        #print(link)
         if has_same_host(link, host) and link not in parsed_links:
           queue.put(link)
           parsed_links.append(link)
-    #print("done")
     return
 
 def open_file(filename, local_file):
@@ -139,7 +135,6 @@ def get_header(s):
         total_response += response
         if total_response[-4:] == "\r\n\r\n".encode('utf-8'):
             break
-    #print("HEADER IS: " + str(total_response))
     return total_response.decode('utf-8')
 
 def download_file(s):
@@ -147,7 +142,6 @@ def download_file(s):
  if not is_success(header):
        return '', ''
  file = b''
- #print("Success")
  while True:
     chunk_size = get_chunk_size(s)
     if (chunk_size == 0):
@@ -162,8 +156,13 @@ def download_file(s):
 def crawl(s, q, host, parsed_links, local_file, cookie):
     while True:
       if q.empty():
-          return
-      filename = q.get()
+          try:
+              filename = q.get(block=True, timeout= 2)
+          except:
+              return
+      else:
+          filename = q.get()
+
       if (not has_same_host(filename, host)) or ("#" in filename):
         continue
       filename = '/' + filename
@@ -197,7 +196,7 @@ def main():
     link_queue = Queue()
     link_queue.put('/index.html')
     parsed_links = []
-    max_threads = args.n
+    max_threads = min(args.n, 8)
     if max_threads < 1:
         return
     threads = []
@@ -214,6 +213,4 @@ def main():
        t.join()
     return
 
-start_time = time.time()
 main()
-print("--- %s seconds ---" % (time.time() - start_time))
