@@ -45,20 +45,6 @@ def format_request(file, host):
 def is_success(header):
     return header.startswith('HTTP/1.1 200 OK')
 
-'''
-def get_cookie(response):
-    index = response.find('Set-Cookie: ')
-    if index < 0:
-        return ''
-    index += 12
-    response = response[index:]
-    semi = response.find(';')
-    if semi < 0:
-        return '', ''
-    cookie = response[:semi]
-    return cookie
-'''
-
 def get_chunk_size(s):
     size_str = s.recv(2)
     while size_str[-2:] != b"\r\n":
@@ -83,7 +69,6 @@ def is_text(response):
     index += 14
     return("text" in response[index:])
 
-#TODO: match https, www???
 def has_same_host(file, host):
     r = re.compile('(?:(?<=http)|(?<=https))://(.*?)(?:(?=/)|(?=$))', re.IGNORECASE)
     file_hosts = r.findall(file)
@@ -91,7 +76,6 @@ def has_same_host(file, host):
         return True
     return(file_hosts[0] == host)
 
-#TODO: Only add new links
 def handle_links(response, queue, host, parsed_links):
     response_text = response.decode('utf-8')
     r = re.compile('(?:(?<=href=")|(?<=src=")).*?(?=")', re.IGNORECASE)
@@ -106,9 +90,9 @@ def handle_links(response, queue, host, parsed_links):
     #print("done")
     return
 
-def open_file(filename):
+def open_file(filename, local_file):
   filename = os.path.basename(filename.rstrip('/'))
-  filename = os.getcwd() + '/downloads/' + filename
+  filename = os.getcwd() + '/' + local_file '/' + filename
   new_filename = filename
   if os.path.isfile(filename):
      v = 1
@@ -159,7 +143,7 @@ def download_file(s):
  s.recv(2)
  return header, file
 
-def crawl(s, q, host, parsed_links):
+def crawl(s, q, host, parsed_links, local_file):
     while True:
       if q.empty():
           return
@@ -173,28 +157,28 @@ def crawl(s, q, host, parsed_links):
       if not header or not file:
           continue
       isText = is_text(header)
-      f = open_file(filename)
+      f = open_file(filename, local_file)
       if f == -1:
           continue
       break
-      
+
     f.write(file)
     if isText:
        handle_links(file, q, host, parsed_links)
     f.close()
-    crawl(s, q, host, parsed_links)
+    crawl(s, q, host, parsed_links, local_file)
     return
 
-def new_user(host, port, link_queue, parsed_links):
+def new_user(host, port, link_queue, parsed_links, local_file):
     s = open_socket()
     try_connect(s, host, port)
-    crawl(s, link_queue, host, parsed_links)
+    crawl(s, link_queue, host, parsed_links, local_file)
     return
 
 def main():
     args = parse_args()
     link_queue = Queue()
-    link_queue.put(args.f)
+    link_queue.put('/index.html')
     parsed_links = []
     max_threads = args.n
     if max_threads < 1:
@@ -202,7 +186,7 @@ def main():
     threads = []
     for x in range(max_threads):
        try:
-          t = threading.Thread(target=new_user, args=(args.h, args.p, link_queue, parsed_links))
+          t = threading.Thread(target=new_user, args=(args.h, args.p, link_queue, parsed_links, args.f))
           t.start()
           threads.append(t)
        except:
