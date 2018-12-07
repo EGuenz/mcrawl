@@ -6,6 +6,7 @@ import sys
 import re
 import os
 import threading
+import time
 
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
@@ -35,18 +36,16 @@ def try_connect(s, host, port):
         eprint('1: Cant connect to server')
         exit(1)
 
-def format_request(file, host, cookie):
+def format_request(file, host):
     message = "GET " + file + " HTTP/1.1\r\n"
-    message += "Host: " + host + "\r\n"
-    if not cookie:
-       message += "\r\n"
-       return message
-    message += "Set-Cookie: " + cookie + "\r\n\r\n"
-    return(message)
+    message += "Host: " + host + "\r\n\r\n"
+    return message
+
 
 def is_success(header):
     return header.startswith('HTTP/1.1 200 OK')
 
+'''
 def get_cookie(response):
     index = response.find('Set-Cookie: ')
     if index < 0:
@@ -58,6 +57,7 @@ def get_cookie(response):
         return '', ''
     cookie = response[:semi]
     return cookie
+'''
 
 def get_chunk_size(s):
     size_str = s.recv(2)
@@ -99,11 +99,11 @@ def handle_links(response, queue, host, parsed_links):
     if not links:
         return
     for link in links:
-        print(link)
+        #print(link)
         if has_same_host(link, host) and link not in parsed_links:
           queue.put(link)
           parsed_links.append(link)
-    print("done")
+    #print("done")
     return
 
 def open_file(filename):
@@ -145,7 +145,7 @@ def download_file(s):
  if not is_success(header):
        return '', ''
  file = b''
- print("Success")
+ #print("Success")
  while True:
     chunk_size = get_chunk_size(s)
     if (chunk_size == 0):
@@ -157,7 +157,7 @@ def download_file(s):
  s.recv(2)
  return header, file
 
-def crawl(s, q, host, cookie, parsed_links):
+def crawl(s, q, host, parsed_links):
     while True:
       if q.empty():
           return
@@ -165,8 +165,7 @@ def crawl(s, q, host, cookie, parsed_links):
       if (not has_same_host(filename, host)) or ("#" in filename):
         continue
       filename = '/' + filename
-      message = format_request(filename, host, cookie)
-      #print(message)
+      message = format_request(filename, host)
       s.sendall(message.encode('utf-8'))
       header, file = download_file(s)
       if not header or not file:
@@ -179,13 +178,13 @@ def crawl(s, q, host, cookie, parsed_links):
     if isText:
        handle_links(file, q, host, parsed_links)
     f.close()
-    crawl(s, q, host, cookie, parsed_links)
+    crawl(s, q, host, parsed_links)
     return
 
 def new_user(host, port, link_queue, parsed_links):
     s = open_socket()
     try_connect(s, host, port)
-    crawl(s, link_queue, host, '', parsed_links)
+    crawl(s, link_queue, host, parsed_links)
     return
 
 def main():
@@ -196,13 +195,20 @@ def main():
     max_threads = args.n
     if max_threads < 1:
         return
+    threads = []
     for x in range(max_threads):
        try:
           t = threading.Thread(target=new_user, args=(args.h, args.p, link_queue, parsed_links))
           t.start()
+          threads.append(t)
        except:
           eprint('7: Unable to start user_thread')
           exit(1)
+
+    for t in threads:
+       t.join()
     return
 
+start_time = time.time()
 main()
+print("--- %s seconds ---" % (time.time() - start_time))
